@@ -2,6 +2,9 @@ extern crate rustbox;
 
 use std::error::Error;
 use std::default::Default;
+use std::net::UdpSocket;
+use std::process;
+use std::io::Result;
 
 use rustbox::{Color, RustBox};
 use rustbox::Key;
@@ -21,11 +24,17 @@ struct Square {
 }
 
 #[derive(Clone, Copy, Debug)]
+enum Event {
+    Quit,
+    Direction(Direction),
+}
+
+#[derive(Clone, Copy, Debug)]
 enum Direction {
     Up,
-    Right,
-    Left,
     Down,
+    Left,
+    Right,
 }
 
 impl Square {
@@ -57,21 +66,21 @@ impl Square {
         }
     }
 
-    fn move_up(&mut self, rustbox: &RustBox) {
-        self.move_in_direction(Direction::Up, &rustbox);
-    }
+    /* fn move_up(&mut self, rustbox: &RustBox) { */
+    /*     self.move_in_direction(Direction::Up, &rustbox); */
+    /* } */
 
-    fn move_right(&mut self, rustbox: &RustBox) {
-        self.move_in_direction(Direction::Right, &rustbox);
-    }
+    /* fn move_down(&mut self, rustbox: &RustBox) { */
+    /*     self.move_in_direction(Direction::Down, &rustbox); */
+    /* } */
 
-    fn move_down(&mut self, rustbox: &RustBox) {
-        self.move_in_direction(Direction::Down, &rustbox);
-    }
+    /* fn move_left(&mut self, rustbox: &RustBox) { */
+    /*     self.move_in_direction(Direction::Left, &rustbox); */
+    /* } */
 
-    fn move_left(&mut self, rustbox: &RustBox) {
-        self.move_in_direction(Direction::Left, &rustbox);
-    }
+    /* fn move_right(&mut self, rustbox: &RustBox) { */
+    /*     self.move_in_direction(Direction::Right, &rustbox); */
+    /* } */
 
     fn move_in_direction(&mut self, direction: Direction, rustbox: &RustBox) {
         let new_coordinates: Point = match direction {
@@ -92,10 +101,48 @@ impl Square {
     }
 }
 
+fn match_event(key: Key) -> Option<Event> {
+    match key {
+        Key::Char('q') => Some(Event::Quit),
+        Key::Up        => Some(Event::Direction(Direction::Up)),
+        Key::Down      => Some(Event::Direction(Direction::Down)),
+        Key::Left      => Some(Event::Direction(Direction::Left)),
+        Key::Right     => Some(Event::Direction(Direction::Right)),
+        _              => None
+    }
+}
+
+fn rustbox_poll(square: &mut Square, rustbox: &RustBox) -> Result<()> {
+    match rustbox.poll_event(false) {
+        Ok(rustbox::Event::KeyEvent(key)) => {
+            let event = match_event(key);
+            if let Some(event) = event {
+                match event {
+                    Event::Direction(direction) => {
+                        square.move_in_direction(direction, &rustbox);
+                        rustbox.present();
+                    }
+                    Event::Quit => {
+                        return Err(std::io::Error::new(std::io::ErrorKind::Other, "Received exit signal"));
+                    }
+                }
+            }
+        }
+        Err(e) => panic!("{}", e.description()),
+        _ => { }
+    }
+    Ok(())
+}
+
 fn main() {
+    /* let port = 34254; */
+    /* let bind_address = format!("127.0.0.1:{}", port); */
+    /* let mut socket = UdpSocket::bind(&bind_address) */
+    /*     .expect(format!("Couldn't bind to {}", bind_address).as_str()); */
+
     let rustbox = match RustBox::init(Default::default()) {
-        Result::Ok(v) => v,
-        Result::Err(e) => panic!("{}", e),
+        Ok(v) => v,
+        Err(e) => panic!("{}", e),
     };
 
     let mut square = Square {
@@ -108,31 +155,9 @@ fn main() {
     rustbox.present();
 
     loop {
-        match rustbox.poll_event(false) {
-            Ok(rustbox::Event::KeyEvent(key)) => {
-                match key {
-                    Key::Char('q') => { break; }
-                    Key::Up => {
-                        square.move_up(&rustbox);
-                        rustbox.present();
-                    }
-                    Key::Right => {
-                        square.move_right(&rustbox);
-                        rustbox.present();
-                    }
-                    Key::Left => {
-                        square.move_left(&rustbox);
-                        rustbox.present();
-                    }
-                    Key::Down => {
-                        square.move_down(&rustbox);
-                        rustbox.present();
-                    }
-                    _ => { }
-                }
-            },
-            Err(e) => panic!("{}", e.description()),
-            _ => { }
+        match rustbox_poll(&mut square, &rustbox) {
+            Ok(_) => { },
+            Err(_) => break,
         }
     }
 }
