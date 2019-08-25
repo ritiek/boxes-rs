@@ -1,11 +1,14 @@
 extern crate rustbox;
 
+use std::env;
 use std::error::Error;
 use std::default::Default;
-use std::net::UdpSocket;
+use std::net::{SocketAddr, UdpSocket};
 use std::io::Result;
 use std::sync::{Arc, Mutex};
 use std::{thread, time};
+
+use std::process;
 
 use rustbox::{Color, RustBox};
 use rustbox::Key;
@@ -24,17 +27,17 @@ struct Square {
 }
 
 #[derive(Clone, Copy, Debug)]
-enum Event {
-    Quit,
-    Direction(Direction),
-}
-
-#[derive(Clone, Copy, Debug)]
 enum Direction {
     Up,
     Down,
     Left,
     Right,
+}
+
+#[derive(Clone, Copy, Debug)]
+enum Event {
+    Quit,
+    Direction(Direction),
 }
 
 impl Square {
@@ -66,8 +69,8 @@ impl Square {
         }
     }
 
-    fn move_in_direction(&mut self, direction: Direction, rustbox: &Arc<Mutex<RustBox>>) {
-        let new_coordinates: Point = match direction {
+    fn move_in_direction(&mut self, direction: Direction) -> Point {
+        match direction {
             Direction::Up => {
                 Point { x: self.coordinates.x, y: self.coordinates.y - 1 }
             }
@@ -80,8 +83,98 @@ impl Square {
             Direction::Down => {
                 Point { x: self.coordinates.x, y: self.coordinates.y + 1 }
             }
+        }
+    }
+}
+
+#[derive(Debug)]
+struct LocalSocket {
+    sender: UdpSocket,
+    receiver: UdpSocket,
+}
+
+#[derive(Debug)]
+struct RemoteSocket {
+    receiver: SocketAddr,
+}
+
+#[derive(Debug)]
+struct Communicate {
+    local_socket: LocalSocket,
+    remote_sockets: Vec<RemoteSocket>,
+    client: bool,
+}
+
+impl Communicate {
+    fn new(local_socket: LocalSocket, remote_socket: Option<RemoteSocket>) -> Communicate {
+        let mut remote_sockets: Vec<RemoteSocket> = Vec::new();
+        let client = match remote_socket {
+            Some(v) => {
+                remote_sockets.push(v);
+                true
+            }
+            None => {
+                false
+            },
         };
-        self.redraw(new_coordinates, &rustbox);
+
+        Communicate {
+            local_socket: local_socket,
+            remote_sockets: remote_sockets,
+            client: client,
+        }
+    }
+
+    fn register_self(self) {
+        
+    }
+
+    fn register_remote_socket(&mut self, socket: RemoteSocket) {
+        self.remote_sockets.push(socket);
+    }
+
+    fn send_position() {
+        
+    }
+
+    fn receive_data(&self, socket: &UdpSocket, rustbox: &Arc<Mutex<RustBox>>) {
+        let mut players: Vec<Square> = Vec::new();
+        let mut buf = [0; 3];
+        loop {
+            let (amt, src) = socket.recv_from(&mut buf)
+                .expect("Failed to receive data");
+            let remote_bind_socket = format!("{}:9997", src.ip());
+            self.process_data(amt, src, &buf);
+            rustbox.lock().unwrap().present();
+            /* square.draw(&rustbox); */
+            /* rustbox.lock().unwrap().present(); */
+        }
+    }
+
+    fn process_data(&self, amt: usize, src: SocketAddr, buf: &[u8]) {
+        match amt {
+            1 => {
+                match buf[0] {
+                    255 => {
+                        /* socket.send_to(&(players.len() as u8).to_be_bytes(), remote_bind_socket); */
+                    }
+                    0 => {
+                        let mut player = Square {
+                            side: 3,
+                            coordinates: Point { x: 0, y: 0 },
+                            color: Color::Blue,
+                        };
+                        /* player.draw(&rustbox); */
+                        /* players.push(player); */
+                    }
+                    _ => { }
+                }
+            }
+            2 => {
+                
+            }
+            _ => { },
+        }
     }
 }
 
@@ -106,7 +199,8 @@ fn rustbox_poll(square: &mut Square, rustbox: &Arc<Mutex<RustBox>>) -> Result<()
             if let Some(event) = event {
                 match event {
                     Event::Direction(direction) => {
-                        square.move_in_direction(direction, &rustbox);
+                        let position = square.move_in_direction(direction);
+                        square.redraw(position, &rustbox);
                         rustbox.lock().unwrap().present();
                     }
                     Event::Quit => {
@@ -121,63 +215,71 @@ fn rustbox_poll(square: &mut Square, rustbox: &Arc<Mutex<RustBox>>) -> Result<()
     Ok(())
 }
 
-fn receive_data(bind_socket: &str, rustbox: &Arc<Mutex<RustBox>>) {
-    let mut square = Square {
-        side: 3,
-        coordinates: Point { x: 12, y: 12 },
-        color: Color::Red,
-    };
-    /* receive_data(receiver_socket, &rustbox); */
-    let socket = UdpSocket::bind(&bind_socket)
-        .expect(format!("Couldn't bind to {}", bind_socket).as_str());
-    let mut buf = [0; 3];
-    loop {
-        let (amt, src) = socket.recv_from(&mut buf)
-            .expect("Failed to receive data");
-        /* println!("{:?}", &buf[0 .. amt]); */
-        square.draw(&rustbox);
-        rustbox.lock().unwrap().present();
-    }
-}
 
-fn send_data(from_socket: &str, to_socket: &str) {
-    let socket = UdpSocket::bind(&from_socket)
-        .expect(format!("Couldn't bind to {}", from_socket).as_str());
+fn get_player(socket: &UdpSocket) {
 }
 
 fn main() {
-    let bind_interface = "127.0.0.1";
+    let args: Vec<String> = env::args().collect();
+    let bind_interface: &str = "127.0.0.1";
 
-    let bind_port = 9999;
-    let bind_socket = format!("{}:{}", bind_interface, bind_port);
+    let bind_port: u16 = 9999;
+    let bind_address = format!("{}:{}", &bind_interface, &bind_port);
 
-    /* let sender_port = 9998; */
-    /* let sender_socket = format!("{}:{}", interface, sender_port); */
+    let sender_port: u16 = 9998;
+    let sender_address = format!("{}:{}", &bind_interface, &sender_port);
+
+    let remote_address: Option<RemoteSocket> = match args.len() {
+        1 => None,
+        _ => Some(RemoteSocket {
+            receiver: args[0]
+                .parse()
+                .expect("Unable to parse socket address")
+            }),
+    };
 
     let rustbox = match RustBox::init(Default::default()) {
         Ok(v) => Arc::new(Mutex::new(v)),
         Err(e) => panic!("{}", e),
     };
 
+    let bind_socket = UdpSocket::bind(&bind_address)
+        .expect(format!("Couldn't bind to {}", bind_address).as_str());
 
-    let clonebox = rustbox.clone();
-    thread::spawn(move || {
-        receive_data(&bind_socket, &clonebox);
-    });
+    let sender_socket = UdpSocket::bind(&sender_address)
+        .expect(format!("Couldn't bind to {}", sender_address).as_str());
 
-    let mut square = Square {
-        side: 3,
-        coordinates: Point { x: 0, y: 0 },
-        color: Color::Blue,
+    let local_socket = LocalSocket {
+        sender: sender_socket,
+        receiver: bind_socket
     };
 
-    square.draw(&rustbox);
+    let buf = &[0x00];
+
+    /* thread::sleep(time::Duration::from_millis(1000)); */
+    /* local_socket.send_to(buf, bind_address) */
+    /*     .expect("Failed to send data"); */
+
+    let network = Communicate::new(local_socket, remote_address);
+
+    let clonebox = rustbox.clone();
+    /* thread::spawn(move || { */
+    /*     receive_data(&local_socket, &clonebox); */
+    /* }); */
+
+    /* let mut square = Square { */
+    /*     side: 3, */
+    /*     coordinates: Point { x: 0, y: 0 }, */
+    /*     color: Color::Blue, */
+    /* }; */
+
+    /* square.draw(&rustbox); */
     rustbox.lock().unwrap().present();
 
     loop {
-        match rustbox_poll(&mut square, &rustbox) {
-            Ok(_) => { },
-            Err(_) => break,
-        }
+        /* match rustbox_poll(&mut player, &rustbox) { */
+        /*     Ok(_) => { }, */
+        /*     Err(_) => break, */
+        /* } */
     }
 }
