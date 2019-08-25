@@ -94,43 +94,50 @@ struct LocalSocket {
 }
 
 #[derive(Debug)]
-struct RemoteSocket {
-    receiver: SocketAddr,
-}
-
-#[derive(Debug)]
 struct Communicate {
     local_socket: LocalSocket,
-    remote_sockets: Vec<RemoteSocket>,
-    client: bool,
+    host_addr: Option<SocketAddr>,
+    peer_sockets: Vec<SocketAddr>,
 }
 
 impl Communicate {
-    fn new(local_socket: LocalSocket, remote_socket: Option<RemoteSocket>) -> Communicate {
-        let mut remote_sockets: Vec<RemoteSocket> = Vec::new();
-        let client = match remote_socket {
-            Some(v) => {
-                remote_sockets.push(v);
-                true
-            }
-            None => {
-                false
-            },
+    fn new(sender_addr: SocketAddr, receiver_addr: SocketAddr, host_addr: Option<SocketAddr>) -> Communicate {
+        let sender_socket = UdpSocket::bind(&sender_addr)
+            .expect(format!("Couldn't bind to {} for sending UDP data", sender_addr).as_str());
+
+        let receiver_socket = UdpSocket::bind(&receiver_addr)
+            .expect(format!("Couldn't bind to {} for receiving UDP data", receiver_addr).as_str());
+
+        let local_socket = LocalSocket {
+            sender: sender_socket,
+            receiver: receiver_socket,
         };
 
         Communicate {
             local_socket: local_socket,
-            remote_sockets: remote_sockets,
-            client: client,
+            host_addr: host_addr,
+            peer_sockets: Vec::new(),
         }
     }
 
-    fn register_self(self) {
-        
+    fn register_self(&self) {
+        match self.host_addr {
+            Some(addr) => self.local_socket.sender
+                .send_to(&[0x01], addr)
+                .expect("Failed to register self"),
+            None => panic!("Cannot self register without any known host"),
+        };
     }
 
-    fn register_remote_socket(&mut self, socket: RemoteSocket) {
-        self.remote_sockets.push(socket);
+    fn register_remote_socket(&mut self, addr: SocketAddr) {
+        self.local_socket.sender
+            .send_to(
+                &(self.peer_sockets.len() as u8).to_be_bytes(),
+                addr
+            )
+            .expect("Failed to register remote socket");
+
+        self.peer_sockets.push(addr);
     }
 
     fn send_position() {
@@ -216,26 +223,26 @@ fn rustbox_poll(square: &mut Square, rustbox: &Arc<Mutex<RustBox>>) -> Result<()
 }
 
 
-fn get_player(socket: &UdpSocket) {
-}
-
 fn main() {
     let args: Vec<String> = env::args().collect();
     let bind_interface: &str = "127.0.0.1";
 
-    let bind_port: u16 = 9999;
-    let bind_address = format!("{}:{}", &bind_interface, &bind_port);
+    let receiver_port: u16 = 9999;
+    let receiver_address: SocketAddr = format!("{}:{}", &bind_interface, &receiver_port)
+        .parse()
+        .expect("Unable to parse socket address");
 
     let sender_port: u16 = 9998;
-    let sender_address = format!("{}:{}", &bind_interface, &sender_port);
+    let sender_address: SocketAddr = format!("{}:{}", &bind_interface, &sender_port)
+        .parse()
+        .expect("Unable to parse socket address");
 
-    let remote_address: Option<RemoteSocket> = match args.len() {
+    let host_address: Option<SocketAddr> = match args.len() {
         1 => None,
-        _ => Some(RemoteSocket {
-            receiver: args[0]
-                .parse()
-                .expect("Unable to parse socket address")
-            }),
+        _ => Some(args[0]
+            .parse()
+            .expect("Unable to parse socket address")
+            ),
     };
 
     let rustbox = match RustBox::init(Default::default()) {
@@ -243,24 +250,22 @@ fn main() {
         Err(e) => panic!("{}", e),
     };
 
-    let bind_socket = UdpSocket::bind(&bind_address)
-        .expect(format!("Couldn't bind to {}", bind_address).as_str());
-
-    let sender_socket = UdpSocket::bind(&sender_address)
-        .expect(format!("Couldn't bind to {}", sender_address).as_str());
-
-    let local_socket = LocalSocket {
-        sender: sender_socket,
-        receiver: bind_socket
-    };
-
     let buf = &[0x00];
 
     /* thread::sleep(time::Duration::from_millis(1000)); */
-    /* local_socket.send_to(buf, bind_address) */
+    /* local_socket.send_to(buf, receiver_address) */
     /*     .expect("Failed to send data"); */
 
-    let network = Communicate::new(local_socket, remote_address);
+    let game = Communicate::new(receiver_address, sender_address, host_address);
+    match game.host_addr {
+        Some(v) => {
+            // We are a client to someother host
+        }
+        None => {
+            // We are the host
+            game.register_self();
+        }
+    }
 
     let clonebox = rustbox.clone();
     /* thread::spawn(move || { */
