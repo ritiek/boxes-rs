@@ -101,23 +101,23 @@ struct Communicate {
 }
 
 impl Communicate {
-    fn new(sender_addr: SocketAddr, receiver_addr: SocketAddr, host_addr: SocketAddr) -> Communicate {
-        let sender_socket = UdpSocket::bind(&sender_addr)
-            .expect(format!("Couldn't bind to {} for sending UDP data", sender_addr).as_str());
+    fn new(sender_addr: SocketAddr, receiver_addr: SocketAddr, host_addr: SocketAddr) -> Result<Communicate> {
+        let sender_socket = UdpSocket::bind(&sender_addr)?;
+            /* .expect(format!("Couldn't bind to {} for sending UDP data", sender_addr).as_str()); */
 
-        let receiver_socket = UdpSocket::bind(&receiver_addr)
-            .expect(format!("Couldn't bind to {} for receiving UDP data", receiver_addr).as_str());
+        let receiver_socket = UdpSocket::bind(&receiver_addr)?;
+            /* .expect(format!("Couldn't bind to {} for receiving UDP data", receiver_addr).as_str()); */
 
         let local_socket = LocalSocket {
             sender: sender_socket,
             receiver: receiver_socket,
         };
 
-        Communicate {
+        Ok(Communicate {
             local_socket: local_socket,
             host_addr: host_addr,
             peer_sockets: Vec::new(),
-        }
+        })
     }
 
     fn register_self(&self) {
@@ -141,33 +141,24 @@ impl Communicate {
     }
 
     fn poll_event(&self) {
+        self.local_socket.receiver.set_read_timeout(None)
+            .expect("Unset set_read_timeout call failed");
+
         let mut buf = [0; 3];
         let (amt, src) = self.local_socket.receiver
             .recv_from(&mut buf)
             .expect("Failed to receive data");
+
+        // self.process_data(amt, src, &buf);
     }
 
-    fn peek_event(&self, duration: time::Duration) {
+    fn peek_event(&self, duration: time::Duration) -> Result<(usize, SocketAddr)> {
         self.local_socket.receiver.set_read_timeout(Some(duration))
             .expect(&format!("set_read_timeout call to {:?} failed", duration));
 
         let mut buf = [0; 3];
-        let (amt, src) = self.local_socket.receiver
+        self.local_socket.receiver
             .recv_from(&mut buf)
-            .expect("Failed to receive data");
-
-        self.local_socket.receiver.set_read_timeout(None)
-            .expect("Unset set_read_timeout call failed");
-    }
-
-    fn receive_events(&self, threaded: bool) {
-        let mut players: Vec<Square> = Vec::new();
-        let mut buf = [0; 3];
-        loop {
-            let (amt, src) = self.local_socket.receiver.recv_from(&mut buf)
-                .expect("Failed to receive data");
-            self.process_data(amt, src, &buf);
-        }
     }
 
     fn process_data(&self, amt: usize, src: SocketAddr, buf: &[u8]) {
@@ -267,13 +258,32 @@ fn main() {
     /* local_socket.send_to(buf, receiver_address) */
     /*     .expect("Failed to send data"); */
 
-    let game = Communicate::new(receiver_addr, sender_addr, host_addr);
+    let game = match Communicate::new(receiver_addr, sender_addr, host_addr) {
+        Ok(v) => v,
+        Err(e) => panic!("{}", e),
+    };
+
+    /* let mut event: Result<(usize, SocketAddr)>; */
+    thread::spawn(move || {
+        let duration = time::Duration::from_millis(5000);
+        let event = game.peek_event(duration);
+    });
+
     game.register_self();
 
     let clonebox = rustbox.clone();
     /* thread::spawn(move || { */
-    /*     receive_events(&local_socket, &clonebox); */
+    /*     game.poll_event(); */
     /* }); */
+    /* println!("buhaha"); */
+    /* match event { */
+    /*     Ok(event) => { */
+    /*     } */
+    /*     Err(e) => { */
+    /*         panic!("Could not receive player id from host server"); */
+    /*     } */
+    /* } */
+    /* println!("we peeked it"); */
 
     /* let mut square = Square { */
     /*     side: 3, */
@@ -284,10 +294,10 @@ fn main() {
     /* square.draw(&rustbox); */
     rustbox.lock().unwrap().present();
 
-    loop {
+    /* loop { */
         /* match rustbox_poll(&mut player, &rustbox) { */
         /*     Ok(_) => { }, */
         /*     Err(_) => break, */
         /* } */
-    }
+    /* } */
 }
