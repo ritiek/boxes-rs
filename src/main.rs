@@ -104,8 +104,8 @@ enum NetworkEvent {
 
 #[derive(Debug)]
 struct NetworkData {
-    src: SocketAddr,
     amt: usize,
+    src: SocketAddr,
     /* event: NetworkEvent, */
 }
 
@@ -133,8 +133,8 @@ impl Receiver {
         /*     .expect("Failed to receive data"); */
 
         Ok(NetworkData {
-            src: src,
             amt: amt,
+            src: src,
         })
         // self.process_data(amt, src, &buf);
     }
@@ -143,12 +143,12 @@ impl Receiver {
         self.socket.set_read_timeout(Some(duration))?;
             /* .expect(&format!("set_read_timeout call to {:?} failed", duration)); */
 
-        let mut buf = [0; 3];
+        let mut buf = [0; 30000];
         let (amt, src) = self.socket.recv_from(&mut buf)?;
 
         Ok(NetworkData {
-            src: src,
             amt: amt,
+            src: src,
         })
     }
 
@@ -198,10 +198,11 @@ impl Sender {
         })
     }
 
-    fn register_self(&self) {
-        self.socket
-            .send_to(&[0x01], self.host_addr)
-            .expect("Failed to register self");
+    fn register_self(&self) -> Result<()> {
+        let bytes = bincode::serialize(&NetworkEvent::PlayerJoin).unwrap();
+        self.socket.send_to(&bytes, self.host_addr)?;
+            /* .expect("Failed to register self"); */
+        Ok(())
     }
 
     fn register_remote_socket(&mut self, addr: SocketAddr) {
@@ -272,16 +273,11 @@ fn main() {
         .parse()
         .expect("Unable to parse socket address");
 
-    let host_addr : SocketAddr = match args.len() {
+    let host_addr: SocketAddr = match args.len() {
         1 => receiver_addr,
         _ => args[0]
             .parse()
             .expect("Unable to parse socket address"),
-    };
-
-    let rustbox = match RustBox::init(Default::default()) {
-        Ok(v) => Arc::new(Mutex::new(v)),
-        Err(e) => panic!("{}", e),
     };
 
     let buf = &[0x00];
@@ -302,12 +298,24 @@ fn main() {
 
     /* let mut event: Result<(usize, SocketAddr)>; */
     thread::spawn(move || {
+        println!("Waiting for connection...");
         let duration = time::Duration::from_millis(5000);
-        let event = event_receiver.peek_event(duration);
+        let event = match event_receiver.peek_event(duration) {
+        /* let event = match event_receiver.poll_event() { */
+            Ok(v) => println!("{:?}", v),
+            Err(e) => panic!("{}", e),
+        };
         /* event_sender.lock().unwrap().register_remote_socket(); */
     });
 
+    /* let duration = time::Duration::from_millis(4000); */
+    /* thread::sleep(duration); */
     event_sender.lock().unwrap().register_self();
+
+    let rustbox = match RustBox::init(Default::default()) {
+        Ok(v) => Arc::new(Mutex::new(v)),
+        Err(e) => panic!("{}", e),
+    };
 
     let clonebox = rustbox.clone();
     /* thread::spawn(move || { */
@@ -332,10 +340,10 @@ fn main() {
     /* square.draw(&rustbox); */
     rustbox.lock().unwrap().present();
 
-    /* loop { */
+    loop {
         /* match rustbox_poll(&mut player, &rustbox) { */
         /*     Ok(_) => { }, */
         /*     Err(_) => break, */
         /* } */
-    /* } */
+    }
 }
