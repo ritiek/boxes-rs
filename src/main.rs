@@ -1,4 +1,7 @@
 extern crate rustbox;
+extern crate bincode;
+extern crate serde_derive;
+extern crate serde;
 
 use std::env;
 use std::error::Error;
@@ -12,13 +15,16 @@ use std::process;
 
 use rustbox::{Color, RustBox};
 use rustbox::Key;
+use serde_derive::{Serialize, Deserialize};
 
+/* #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)] */
 #[derive(Clone, Copy, Debug, PartialEq)]
 struct Point {
     x: usize,
     y: usize,
 }
 
+/* #[derive(Clone, Copy, Debug, Serialize, Deserialize)] */
 #[derive(Clone, Copy, Debug)]
 struct Square {
     side: usize,
@@ -26,6 +32,7 @@ struct Square {
     color: Color,
 }
 
+/* #[derive(Clone, Copy, Debug, Serialize, Deserialize)] */
 #[derive(Clone, Copy, Debug)]
 enum Direction {
     Up,
@@ -34,8 +41,9 @@ enum Direction {
     Right,
 }
 
+/* #[derive(Clone, Copy, Debug, Serialize, Deserialize)] */
 #[derive(Clone, Copy, Debug)]
-enum Event {
+enum GameEvent {
     Quit,
     Direction(Direction),
 }
@@ -87,78 +95,54 @@ impl Square {
     }
 }
 
-#[derive(Debug)]
-struct LocalSocket {
-    sender: UdpSocket,
-    receiver: UdpSocket,
+#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+enum NetworkEvent {
+    Point(Point),
+    PlayerJoin,
+    PlayerLeft,
 }
 
 #[derive(Debug)]
-struct Communicate {
-    local_socket: LocalSocket,
-    host_addr: SocketAddr,
-    peer_sockets: Vec<SocketAddr>,
+struct NetworkData {
+    src: SocketAddr,
+    amt: i32,
+    buf: [u8],
+    event: NetworkEvent,
 }
 
-impl Communicate {
-    fn new(sender_addr: SocketAddr, receiver_addr: SocketAddr, host_addr: SocketAddr) -> Result<Communicate> {
-        let sender_socket = UdpSocket::bind(&sender_addr)?;
+#[derive(Debug)]
+struct Receiver {
+    socket: UdpSocket,
+}
+
+impl Receiver {
+    fn new(addr: SocketAddr) -> Result<Receiver> {
+        let socket = UdpSocket::bind(&addr)?;
             /* .expect(format!("Couldn't bind to {} for sending UDP data", sender_addr).as_str()); */
 
-        let receiver_socket = UdpSocket::bind(&receiver_addr)?;
-            /* .expect(format!("Couldn't bind to {} for receiving UDP data", receiver_addr).as_str()); */
-
-        let local_socket = LocalSocket {
-            sender: sender_socket,
-            receiver: receiver_socket,
-        };
-
-        Ok(Communicate {
-            local_socket: local_socket,
-            host_addr: host_addr,
-            peer_sockets: Vec::new(),
+        Ok(Receiver {
+            socket: socket,
         })
     }
 
-    fn register_self(&self) {
-        self.local_socket.sender
-            .send_to(&[0x01], self.host_addr)
-            .expect("Failed to register self");
-    }
-
-    fn register_remote_socket(&mut self, addr: SocketAddr) {
-        self.local_socket.sender
-            .send_to(
-                &(self.peer_sockets.len() as u8).to_be_bytes(),
-                addr
-            )
-            .expect("Failed to register remote socket");
-
-        self.peer_sockets.push(addr);
-    }
-
-    fn send_position(&self, position: Point) {
-    }
-
-    fn poll_event(&self) {
-        self.local_socket.receiver.set_read_timeout(None)
+    fn poll_event(&self) -> Result<NetworkData> {
+        self.socket.set_read_timeout(None)
             .expect("Unset set_read_timeout call failed");
 
         let mut buf = [0; 3];
-        let (amt, src) = self.local_socket.receiver
+        let (amt, src) = self.socket
             .recv_from(&mut buf)
             .expect("Failed to receive data");
 
         // self.process_data(amt, src, &buf);
     }
 
-    fn peek_event(&self, duration: time::Duration) -> Result<(usize, SocketAddr)> {
-        self.local_socket.receiver.set_read_timeout(Some(duration))
+    fn peek_event(&self, duration: time::Duration) -> Result<NetworkData> {
+        self.socket.set_read_timeout(Some(duration))
             .expect(&format!("set_read_timeout call to {:?} failed", duration));
 
         let mut buf = [0; 3];
-        self.local_socket.receiver
-            .recv_from(&mut buf)
+        self.socket.recv_from(&mut buf)
     }
 
     fn process_data(&self, amt: usize, src: SocketAddr, buf: &[u8]) {
@@ -188,13 +172,54 @@ impl Communicate {
     }
 }
 
-fn match_event(key: Key) -> Option<Event> {
+#[derive(Debug)]
+struct Sender {
+    socket: UdpSocket,
+    host_addr: SocketAddr,
+    peer_addr: Vec<SocketAddr>,
+}
+
+impl Sender {
+    fn new(addr: SocketAddr, host_addr: SocketAddr) -> Result<Sender> {
+        let socket = UdpSocket::bind(&addr)?;
+            /* .expect(format!("Couldn't bind to {} for sending UDP data", sender_addr).as_str()); */
+
+        Ok(Sender {
+            socket: socket,
+            host_addr: host_addr,
+            peer_addr: Vec::new(),
+        })
+    }
+
+    fn register_self(&self) {
+        self.socket
+            .send_to(&[0x01], self.host_addr)
+            .expect("Failed to register self");
+    }
+
+    fn register_remote_socket(&mut self, addr: SocketAddr) {
+        self.socket
+            .send_to(
+                &(self.peer_addr.len() as u8).to_be_bytes(),
+                addr
+            )
+            .expect("Failed to register remote socket");
+
+        self.peer_addr.push(addr);
+    }
+
+    fn tick(&self, position: Point) {
+    }
+
+}
+
+fn match_event(key: Key) -> Option<GameEvent> {
     match key {
-        Key::Char('q') => Some(Event::Quit),
-        Key::Up        => Some(Event::Direction(Direction::Up)),
-        Key::Down      => Some(Event::Direction(Direction::Down)),
-        Key::Left      => Some(Event::Direction(Direction::Left)),
-        Key::Right     => Some(Event::Direction(Direction::Right)),
+        Key::Char('q') => Some(GameEvent::Quit),
+        Key::Up        => Some(GameEvent::Direction(Direction::Up)),
+        Key::Down      => Some(GameEvent::Direction(Direction::Down)),
+        Key::Left      => Some(GameEvent::Direction(Direction::Left)),
+        Key::Right     => Some(GameEvent::Direction(Direction::Right)),
         _              => None
     }
 }
@@ -208,12 +233,12 @@ fn rustbox_poll(square: &mut Square, rustbox: &Arc<Mutex<RustBox>>) -> Result<()
             let event = match_event(key);
             if let Some(event) = event {
                 match event {
-                    Event::Direction(direction) => {
+                    GameEvent::Direction(direction) => {
                         let position = square.move_in_direction(direction);
                         square.redraw(position, &rustbox);
                         rustbox.lock().unwrap().present();
                     }
-                    Event::Quit => {
+                    GameEvent::Quit => {
                         return Err(std::io::Error::new(std::io::ErrorKind::Other, "Received exit signal"));
                     }
                 }
@@ -258,18 +283,24 @@ fn main() {
     /* local_socket.send_to(buf, receiver_address) */
     /*     .expect("Failed to send data"); */
 
-    let game = match Communicate::new(receiver_addr, sender_addr, host_addr) {
+    let event_receiver = match Receiver::new(receiver_addr) {
         Ok(v) => v,
+        Err(e) => panic!("{}", e),
+    };
+
+    let event_sender = match Sender::new(sender_addr, host_addr) {
+        Ok(v) => Arc::new(Mutex::new(v)),
         Err(e) => panic!("{}", e),
     };
 
     /* let mut event: Result<(usize, SocketAddr)>; */
     thread::spawn(move || {
         let duration = time::Duration::from_millis(5000);
-        let event = game.peek_event(duration);
+        let event = event_receiver.peek_event(duration);
+        event_sender.lock().unwrap().register_remote_socket();
     });
 
-    game.register_self();
+    event_sender.lock().unwrap().register_self();
 
     let clonebox = rustbox.clone();
     /* thread::spawn(move || { */
