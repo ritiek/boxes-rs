@@ -297,14 +297,11 @@ fn main() {
     };
 
     /* let mut event: Result<(usize, SocketAddr)>; */
-    thread::spawn(move || {
+    let registrar = thread::spawn(move || {
         println!("Waiting for connection...");
-        let duration = time::Duration::from_millis(5000);
-        let event = match event_receiver.peek_event(duration) {
-        /* let event = match event_receiver.poll_event() { */
-            Ok(v) => println!("{:?}", v),
-            Err(e) => panic!("{}", e),
-        };
+        /* let duration = time::Duration::from_millis(5000); */
+        /* event_receiver.peek_event(duration) */
+        event_receiver.poll_event()
         /* event_sender.lock().unwrap().register_remote_socket(); */
     });
 
@@ -312,12 +309,22 @@ fn main() {
     /* thread::sleep(duration); */
     event_sender.lock().unwrap().register_self();
 
-    let rustbox = match RustBox::init(Default::default()) {
-        Ok(v) => Arc::new(Mutex::new(v)),
+    let event = registrar.join().unwrap();
+    match event {
+        Ok(v) => {
+            event_sender.lock().unwrap().peer_addr.push(v.src);
+            println!("{}", v.src);
+        }
         Err(e) => panic!("{}", e),
-    };
+    }
 
-    let clonebox = rustbox.clone();
+    /* let rustbox = match RustBox::init(Default::default()) { */
+    /*     Ok(v) => Arc::new(Mutex::new(v)), */
+    /*     Err(e) => panic!("{}", e), */
+    /* }; */
+
+    /* let clonebox = rustbox.clone(); */
+
     /* thread::spawn(move || { */
     /*     game.poll_event(); */
     /* }); */
@@ -338,12 +345,12 @@ fn main() {
     /* }; */
 
     /* square.draw(&rustbox); */
-    rustbox.lock().unwrap().present();
+    /* rustbox.lock().unwrap().present(); */
 
-    loop {
+    /* loop { */
         /* match rustbox_poll(&mut player, &rustbox) { */
         /*     Ok(_) => { }, */
         /*     Err(_) => break, */
         /* } */
-    }
+    /* } */
 }
