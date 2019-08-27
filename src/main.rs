@@ -17,8 +17,8 @@ use rustbox::{Color, RustBox};
 use rustbox::Key;
 use serde_derive::{Serialize, Deserialize};
 
-/* #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)] */
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+/* #[derive(Clone, Copy, Debug, PartialEq)] */
 struct Point {
     x: usize,
     y: usize,
@@ -32,8 +32,8 @@ struct Square {
     color: Color,
 }
 
-/* #[derive(Clone, Copy, Debug, Serialize, Deserialize)] */
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+/* #[derive(Clone, Copy, Debug)] */
 enum Direction {
     Up,
     Down,
@@ -41,8 +41,8 @@ enum Direction {
     Right,
 }
 
-/* #[derive(Clone, Copy, Debug, Serialize, Deserialize)] */
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+/* #[derive(Clone, Copy, Debug)] */
 enum GameEvent {
     Quit,
     Direction(Direction),
@@ -105,9 +105,8 @@ enum NetworkEvent {
 #[derive(Debug)]
 struct NetworkData {
     src: SocketAddr,
-    amt: i32,
-    buf: [u8],
-    event: NetworkEvent,
+    amt: usize,
+    /* event: NetworkEvent, */
 }
 
 #[derive(Debug)]
@@ -126,23 +125,31 @@ impl Receiver {
     }
 
     fn poll_event(&self) -> Result<NetworkData> {
-        self.socket.set_read_timeout(None)
-            .expect("Unset set_read_timeout call failed");
+        self.socket.set_read_timeout(None)?;
+            /* .expect("Unset set_read_timeout call failed"); */
 
         let mut buf = [0; 3];
-        let (amt, src) = self.socket
-            .recv_from(&mut buf)
-            .expect("Failed to receive data");
+        let (amt, src) = self.socket.recv_from(&mut buf)?;
+        /*     .expect("Failed to receive data"); */
 
+        Ok(NetworkData {
+            src: src,
+            amt: amt,
+        })
         // self.process_data(amt, src, &buf);
     }
 
     fn peek_event(&self, duration: time::Duration) -> Result<NetworkData> {
-        self.socket.set_read_timeout(Some(duration))
-            .expect(&format!("set_read_timeout call to {:?} failed", duration));
+        self.socket.set_read_timeout(Some(duration))?;
+            /* .expect(&format!("set_read_timeout call to {:?} failed", duration)); */
 
         let mut buf = [0; 3];
-        self.socket.recv_from(&mut buf)
+        let (amt, src) = self.socket.recv_from(&mut buf)?;
+
+        Ok(NetworkData {
+            src: src,
+            amt: amt,
+        })
     }
 
     fn process_data(&self, amt: usize, src: SocketAddr, buf: &[u8]) {
@@ -297,7 +304,7 @@ fn main() {
     thread::spawn(move || {
         let duration = time::Duration::from_millis(5000);
         let event = event_receiver.peek_event(duration);
-        event_sender.lock().unwrap().register_remote_socket();
+        /* event_sender.lock().unwrap().register_remote_socket(); */
     });
 
     event_sender.lock().unwrap().register_self();
