@@ -100,13 +100,15 @@ enum NetworkEvent {
     Point(Point),
     PlayerJoin,
     PlayerLeft,
+    Nothing,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Copy, Debug)]
 struct NetworkData {
     amt: usize,
     src: SocketAddr,
-    /* event: NetworkEvent, */
+    /* buf: [u8; 3000] */
+    event: NetworkEvent,
 }
 
 #[derive(Debug)]
@@ -128,13 +130,14 @@ impl Receiver {
         self.socket.set_read_timeout(None)?;
             /* .expect("Unset set_read_timeout call failed"); */
 
-        let mut buf = [0; 3];
+        let mut buf = [0; 3000];
         let (amt, src) = self.socket.recv_from(&mut buf)?;
         /*     .expect("Failed to receive data"); */
 
         Ok(NetworkData {
             amt: amt,
             src: src,
+            event: bincode::deserialize(&buf).unwrap(),
         })
         // self.process_data(amt, src, &buf);
     }
@@ -143,39 +146,14 @@ impl Receiver {
         self.socket.set_read_timeout(Some(duration))?;
             /* .expect(&format!("set_read_timeout call to {:?} failed", duration)); */
 
-        let mut buf = [0; 30000];
+        let mut buf = [0; 3000];
         let (amt, src) = self.socket.recv_from(&mut buf)?;
 
         Ok(NetworkData {
             amt: amt,
             src: src,
+            event: bincode::deserialize(&buf).unwrap(),
         })
-    }
-
-    fn process_data(&self, amt: usize, src: SocketAddr, buf: &[u8]) {
-        match amt {
-            1 => {
-                match buf[0] {
-                    255 => {
-                        /* socket.send_to(&(players.len() as u8).to_be_bytes(), remote_bind_socket); */
-                    }
-                    0 => {
-                        let mut player = Square {
-                            side: 3,
-                            coordinates: Point { x: 0, y: 0 },
-                            color: Color::Blue,
-                        };
-                        /* player.draw(&rustbox); */
-                        /* players.push(player); */
-                    }
-                    _ => { }
-                }
-            }
-            2 => {
-                
-            }
-            _ => { },
-        }
     }
 }
 
@@ -307,23 +285,27 @@ fn main() {
 
     /* let duration = time::Duration::from_millis(4000); */
     /* thread::sleep(duration); */
-    event_sender.lock().unwrap().register_self();
 
-    let event = registrar.join().unwrap();
-    match event {
-        Ok(v) => {
-            event_sender.lock().unwrap().peer_addr.push(v.src);
-            println!("{}", v.src);
-        }
+    match event_sender.lock().unwrap().register_self() {
+        Ok(_) => { ; },
         Err(e) => panic!("{}", e),
     }
 
-    /* let rustbox = match RustBox::init(Default::default()) { */
-    /*     Ok(v) => Arc::new(Mutex::new(v)), */
-    /*     Err(e) => panic!("{}", e), */
-    /* }; */
+    let data: NetworkData = match registrar.join().unwrap() {
+        Ok(v) => v,
+        Err(e) => panic!("{}", e),
+    };
 
-    /* let clonebox = rustbox.clone(); */
+    event_sender.lock().unwrap().peer_addr.push(data.src);
+
+    println!("{:?}", data);
+
+    let rustbox = match RustBox::init(Default::default()) {
+        Ok(v) => Arc::new(Mutex::new(v)),
+        Err(e) => panic!("{}", e),
+    };
+
+    let clonebox = rustbox.clone();
 
     /* thread::spawn(move || { */
     /*     game.poll_event(); */
