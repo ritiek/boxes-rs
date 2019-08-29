@@ -78,7 +78,7 @@ impl Square {
     }
 
     fn move_in_direction(&mut self, direction: Direction) -> Point {
-        match direction {
+        let coordinates = match direction {
             Direction::Up => {
                 Point { x: self.coordinates.x, y: self.coordinates.y - 1 }
             }
@@ -91,7 +91,8 @@ impl Square {
             Direction::Down => {
                 Point { x: self.coordinates.x, y: self.coordinates.y + 1 }
             }
-        }
+        };
+        coordinates
     }
 }
 
@@ -194,7 +195,11 @@ impl Sender {
         self.peer_addr.push(addr);
     }
 
-    fn tick(&self, position: Point) {
+    fn tick(&self, position: Point) -> Result<()> {
+        let bytes = bincode::serialize(&position).unwrap();
+        self.socket.send_to(&bytes, self.host_addr)?;
+            /* .expect("Failed to register self"); */
+        Ok(())
     }
 
 }
@@ -210,31 +215,65 @@ fn match_event(key: Key) -> Option<GameEvent> {
     }
 }
 
-fn rustbox_poll(square: &mut Square, rustbox: &Arc<Mutex<RustBox>>) -> Result<()> {
+fn rustbox_poll(square: &mut Square, event_sender: &Arc<Mutex<Sender>>, rustbox: &Arc<Mutex<RustBox>>) -> Result<Point> {
     let delay = time::Duration::from_millis(10);
     let pe = rustbox.lock().unwrap().peek_event(delay, false);
     /* let pe = rustbox.lock().unwrap().poll_event(false); */
     match pe {
         Ok(rustbox::Event::KeyEvent(key)) => {
-            let event = match_event(key);
-            if let Some(event) = event {
-                match event {
-                    GameEvent::Direction(direction) => {
-                        let position = square.move_in_direction(direction);
-                        square.redraw(position, &rustbox);
-                        rustbox.lock().unwrap().present();
+            match match_event(key) {
+                Some(event) => {
+                    match event {
+                        GameEvent::Direction(direction) => {
+                            let position = square.move_in_direction(direction);
+                            event_sender.lock().unwrap().tick(position).unwrap();
+                            /* square.redraw(position, &rustbox); */
+                            /* rustbox.lock().unwrap().present(); */
+                            println!("{:?}", position);
+                            Ok(square.coordinates)
+                            /* Ok(position) */
+                        }
+                        GameEvent::Quit => {
+                            Err(std::io::Error::new(std::io::ErrorKind::Other,
+                                    "Received exit signal"))
+                        }
                     }
-                    GameEvent::Quit => {
-                        return Err(std::io::Error::new(std::io::ErrorKind::Other, "Received exit signal"));
-                    }
+                }
+                None => {
+                    Ok(square.coordinates)
                 }
             }
         }
         Err(e) => panic!("{}", e.description()),
-        _ => { },
+        _ => Ok(square.coordinates),
     }
-    Ok(())
 }
+
+/* fn rustbox_poll(square: &mut Square, rustbox: &Arc<Mutex<RustBox>>) -> Result<()> { */
+    /* let delay = time::Duration::from_millis(10); */
+    /* let pe = rustbox.lock().unwrap().peek_event(delay, false); */
+    /* /1* let pe = rustbox.lock().unwrap().poll_event(false); *1/ */
+    /* match pe { */
+    /*     Ok(rustbox::Event::KeyEvent(key)) => { */
+    /*         let event = match_event(key); */
+    /*         if let Some(event) = event { */
+    /*             match event { */
+    /*                 GameEvent::Direction(direction) => { */
+    /*                     let position = square.move_in_direction(direction); */
+    /*                     square.redraw(position, &rustbox); */
+    /*                     rustbox.lock().unwrap().present(); */
+    /*                 } */
+    /*                 GameEvent::Quit => { */
+    /*                     return Err(std::io::Error::new(std::io::ErrorKind::Other, "Received exit signal")); */
+    /*                 } */
+    /*             } */
+    /*         } */
+    /*     } */
+    /*     Err(e) => panic!("{}", e.description()), */
+    /*     _ => { }, */
+    /* } */
+    /* Ok(()) */
+/* } */
 
 
 fn main() {
@@ -260,10 +299,6 @@ fn main() {
 
     let buf = &[0x00];
 
-    /* thread::sleep(time::Duration::from_millis(1000)); */
-    /* local_socket.send_to(buf, receiver_address) */
-    /*     .expect("Failed to send data"); */
-
     let event_receiver = match Receiver::new(receiver_addr) {
         Ok(v) => v,
         Err(e) => panic!("{}", e),
@@ -274,42 +309,37 @@ fn main() {
         Err(e) => panic!("{}", e),
     };
 
-    /* let mut event: Result<(usize, SocketAddr)>; */
     let registrar = thread::spawn(move || {
         println!("Waiting for connection...");
         /* let duration = time::Duration::from_millis(5000); */
         /* event_receiver.peek_event(duration) */
-        event_receiver.poll_event()
-        /* event_sender.lock().unwrap().register_remote_socket(); */
+        (event_receiver.poll_event(), event_receiver)
     });
-
-    /* let duration = time::Duration::from_millis(4000); */
-    /* thread::sleep(duration); */
 
     match event_sender.lock().unwrap().register_self() {
         Ok(_) => { ; },
         Err(e) => panic!("{}", e),
     }
 
-    let data: NetworkData = match registrar.join().unwrap() {
+    let (event, event_receiver) = registrar.join().unwrap();
+
+    /* let duration = time::Duration::from_millis(4000); */
+    /* thread::sleep(duration); */
+
+    let data: NetworkData = match event {
         Ok(v) => v,
         Err(e) => panic!("{}", e),
     };
 
-    event_sender.lock().unwrap().peer_addr.push(data.src);
-
     println!("{:?}", data);
+
+    event_sender.lock().unwrap().peer_addr.push(data.src);
 
     let rustbox = match RustBox::init(Default::default()) {
         Ok(v) => Arc::new(Mutex::new(v)),
         Err(e) => panic!("{}", e),
     };
 
-    let clonebox = rustbox.clone();
-
-    /* thread::spawn(move || { */
-    /*     game.poll_event(); */
-    /* }); */
     /* println!("buhaha"); */
     /* match event { */
     /*     Ok(event) => { */
@@ -320,19 +350,49 @@ fn main() {
     /* } */
     /* println!("we peeked it"); */
 
-    /* let mut square = Square { */
-    /*     side: 3, */
-    /*     coordinates: Point { x: 0, y: 0 }, */
-    /*     color: Color::Blue, */
-    /* }; */
+    let mut player = Square {
+        side: 3,
+        coordinates: Point { x: 0, y: 0 },
+        color: Color::Blue,
+    };
 
-    /* square.draw(&rustbox); */
-    /* rustbox.lock().unwrap().present(); */
+    player.draw(&rustbox);
+    rustbox.lock().unwrap().present();
 
-    /* loop { */
-        /* match rustbox_poll(&mut player, &rustbox) { */
-        /*     Ok(_) => { }, */
-        /*     Err(_) => break, */
-        /* } */
-    /* } */
+    let clonebox = rustbox.clone();
+
+    thread::spawn(move || {
+        loop {
+            let event = event_receiver.poll_event();
+            let data: NetworkData = match event {
+                Ok(v) => v,
+                Err(e) => panic!("{}", e),
+            };
+            match data.event {
+                NetworkEvent::Point(v) => {
+                    let duration = time::Duration::from_millis(500);
+                    thread::sleep(duration);
+                    /* println!("{:?}", v); */
+                    player.redraw(v, &clonebox);
+                    clonebox.lock().unwrap().present();
+                }
+                _ => { ; }
+            }
+        }
+    });
+
+    loop {
+        let poll = rustbox_poll(&mut player, &event_sender, &rustbox);
+        match poll {
+            Ok(v) => {
+                /* /1* println!("{:?}", v) *1/ */
+                /* event_sender.lock().unwrap().tick(v).unwrap(); */
+                /* /1* rustbox.lock().unwrap().present(); *1/ */
+            },
+            Err(_) => break,
+        };
+        /* let duration = time::Duration::from_millis(500); */
+        /* thread::sleep(duration); */
+        /* println!("{:?}", poll); */
+    }
 }
