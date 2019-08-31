@@ -24,8 +24,7 @@ struct Point {
     y: usize,
 }
 
-/* #[derive(Clone, Copy, Debug, Serialize, Deserialize)] */
-#[derive(Clone, Copy, Debug)]
+#[derive(Debug)]
 struct Square {
     side: usize,
     coordinates: Point,
@@ -49,11 +48,11 @@ enum GameEvent {
 }
 
 impl Square {
-    fn draw(self, rustbox: &Arc<Mutex<RustBox>>) {
+    fn draw(&self, rustbox: &Arc<Mutex<RustBox>>) {
         self.paint('█', &rustbox);
     }
 
-    fn erase(self, rustbox: &Arc<Mutex<RustBox>>) {
+    fn erase(&self, rustbox: &Arc<Mutex<RustBox>>) {
         self.paint(' ', &rustbox);
     }
 
@@ -63,12 +62,12 @@ impl Square {
         self.draw(&rustbox);
     }
 
-    fn paint(self, character: char, rustbox: &Arc<Mutex<RustBox>>) {
+    fn paint(&self, character: char, rustbox: &Arc<Mutex<RustBox>>) {
         let square_row = &character.to_string().repeat(self.side*2);
         for increment in 0..self.side {
             rustbox.lock().unwrap().print(
-                self.coordinates.x,
-                self.coordinates.y + increment,
+                self.coordinates.x as usize,
+                self.coordinates.y as usize + increment,
                 rustbox::RB_BOLD,
                 self.color,
                 Color::Black,
@@ -92,6 +91,7 @@ impl Square {
                 Point { x: self.coordinates.x, y: self.coordinates.y + 1 }
             }
         };
+        /* println!("moved {:?}", coordinates); */
         coordinates
     }
 }
@@ -108,7 +108,7 @@ enum NetworkEvent {
 struct NetworkData {
     amt: usize,
     src: SocketAddr,
-    /* buf: [u8; 3000] */
+    /* buf: [u8; 300] */
     event: NetworkEvent,
 }
 
@@ -131,10 +131,11 @@ impl Receiver {
         self.socket.set_read_timeout(None)?;
             /* .expect("Unset set_read_timeout call failed"); */
 
-        let mut buf = [0; 3000];
+        let mut buf = [0; 300];
         let (amt, src) = self.socket.recv_from(&mut buf)?;
         /*     .expect("Failed to receive data"); */
 
+        let event: NetworkEvent = bincode::deserialize(&buf).unwrap();
         Ok(NetworkData {
             amt: amt,
             src: src,
@@ -147,7 +148,7 @@ impl Receiver {
         self.socket.set_read_timeout(Some(duration))?;
             /* .expect(&format!("set_read_timeout call to {:?} failed", duration)); */
 
-        let mut buf = [0; 3000];
+        let mut buf = [0; 300];
         let (amt, src) = self.socket.recv_from(&mut buf)?;
 
         Ok(NetworkData {
@@ -196,7 +197,7 @@ impl Sender {
     }
 
     fn tick(&self, position: Point) -> Result<()> {
-        let bytes = bincode::serialize(&position).unwrap();
+        let bytes = bincode::serialize(&NetworkEvent::Point(position)).unwrap();
         self.socket.send_to(&bytes, self.host_addr)?;
             /* .expect("Failed to register self"); */
         Ok(())
@@ -215,7 +216,7 @@ fn match_event(key: Key) -> Option<GameEvent> {
     }
 }
 
-fn rustbox_poll(square: &mut Square, event_sender: &Arc<Mutex<Sender>>, rustbox: &Arc<Mutex<RustBox>>) -> Result<Point> {
+fn rustbox_poll(square: &mut Arc<Mutex<Square>>, event_sender: &Arc<Mutex<Sender>>, rustbox: &Arc<Mutex<RustBox>>) -> Result<Point> {
     let delay = time::Duration::from_millis(10);
     let pe = rustbox.lock().unwrap().peek_event(delay, false);
     /* let pe = rustbox.lock().unwrap().poll_event(false); */
@@ -225,12 +226,12 @@ fn rustbox_poll(square: &mut Square, event_sender: &Arc<Mutex<Sender>>, rustbox:
                 Some(event) => {
                     match event {
                         GameEvent::Direction(direction) => {
-                            let position = square.move_in_direction(direction);
+                            let position = square.lock().unwrap().move_in_direction(direction);
                             event_sender.lock().unwrap().tick(position).unwrap();
-                            /* square.redraw(position, &rustbox); */
+                            /* square.lock().unwrap().redraw(position, &rustbox); */
                             /* rustbox.lock().unwrap().present(); */
-                            println!("{:?}", position);
-                            Ok(square.coordinates)
+                            /* println!("{:?}", position); */
+                            Ok(square.lock().unwrap().coordinates)
                             /* Ok(position) */
                         }
                         GameEvent::Quit => {
@@ -240,12 +241,12 @@ fn rustbox_poll(square: &mut Square, event_sender: &Arc<Mutex<Sender>>, rustbox:
                     }
                 }
                 None => {
-                    Ok(square.coordinates)
+                    Ok(square.lock().unwrap().coordinates)
                 }
             }
         }
         Err(e) => panic!("{}", e.description()),
-        _ => Ok(square.coordinates),
+        _ => Ok(square.lock().unwrap().coordinates),
     }
 }
 
@@ -331,8 +332,6 @@ fn main() {
         Err(e) => panic!("{}", e),
     };
 
-    println!("{:?}", data);
-
     event_sender.lock().unwrap().peer_addr.push(data.src);
 
     let rustbox = match RustBox::init(Default::default()) {
@@ -350,17 +349,18 @@ fn main() {
     /* } */
     /* println!("we peeked it"); */
 
-    let mut player = Square {
+    let mut player = Arc::new(Mutex::new(Square {
         side: 3,
         coordinates: Point { x: 0, y: 0 },
         color: Color::Blue,
-    };
+    }));
 
-    player.draw(&rustbox);
-    rustbox.lock().unwrap().present();
+    player.lock().unwrap().draw(&rustbox);
+    /* rustbox.lock().unwrap().present(); */
 
     let clonebox = rustbox.clone();
 
+    let player2 = player.clone();
     thread::spawn(move || {
         loop {
             let event = event_receiver.poll_event();
@@ -370,10 +370,12 @@ fn main() {
             };
             match data.event {
                 NetworkEvent::Point(v) => {
-                    let duration = time::Duration::from_millis(500);
-                    thread::sleep(duration);
-                    /* println!("{:?}", v); */
-                    player.redraw(v, &clonebox);
+                    /* let point = Point { x: 10, y: 10 }; */
+                    /* let duration = time::Duration::from_millis(500); */
+                    /* thread::sleep(duration); */
+                    /* println!("processing {:?}", v); */
+                    /* player2.lock().unwrap().redraw(point, &clonebox); */
+                    player2.lock().unwrap().redraw(v, &clonebox);
                     clonebox.lock().unwrap().present();
                 }
                 _ => { ; }
@@ -381,6 +383,7 @@ fn main() {
         }
     });
 
+    rustbox.lock().unwrap().present();
     loop {
         let poll = rustbox_poll(&mut player, &event_sender, &rustbox);
         match poll {
