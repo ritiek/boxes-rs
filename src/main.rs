@@ -310,44 +310,19 @@ fn main() {
         Err(e) => panic!("{}", e),
     };
 
-    let registrar = thread::spawn(move || {
-        println!("Waiting for connection...");
-        /* let duration = time::Duration::from_millis(5000); */
-        /* event_receiver.peek_event(duration) */
-        (event_receiver.poll_event(), event_receiver)
-    });
 
-    match event_sender.lock().unwrap().register_self() {
-        Ok(_) => { ; },
-        Err(e) => panic!("{}", e),
-    }
+    // --------------------
+    // SOCKET COMMUNICATION
+    // --------------------
 
-    let (event, event_receiver) = registrar.join().unwrap();
-
-    /* let duration = time::Duration::from_millis(4000); */
-    /* thread::sleep(duration); */
-
-    let data: NetworkData = match event {
-        Ok(v) => v,
-        Err(e) => panic!("{}", e),
-    };
-
-    event_sender.lock().unwrap().peer_addr.push(data.src);
+    let event_sender_clone = event_sender.clone();
 
     let rustbox = match RustBox::init(Default::default()) {
         Ok(v) => Arc::new(Mutex::new(v)),
         Err(e) => panic!("{}", e),
     };
 
-    /* println!("buhaha"); */
-    /* match event { */
-    /*     Ok(event) => { */
-    /*     } */
-    /*     Err(e) => { */
-    /*         panic!("Could not receive player id from host server"); */
-    /*     } */
-    /* } */
-    /* println!("we peeked it"); */
+    let clonebox = rustbox.clone();
 
     let mut player = Arc::new(Mutex::new(Square {
         side: 3,
@@ -355,35 +330,36 @@ fn main() {
         color: Color::Blue,
     }));
 
-    player.lock().unwrap().draw(&rustbox);
-    /* rustbox.lock().unwrap().present(); */
+    let player_clone = player.clone();
 
-    let clonebox = rustbox.clone();
-
-    let player2 = player.clone();
-    thread::spawn(move || {
+    let registrar = thread::spawn(move || {
         loop {
-            let event = event_receiver.poll_event();
-            let data: NetworkData = match event {
+            let data = match event_receiver.poll_event() {
                 Ok(v) => v,
                 Err(e) => panic!("{}", e),
             };
+
             match data.event {
+                NetworkEvent::PlayerJoin => {
+                    event_sender_clone.lock().unwrap().peer_addr.push(data.src);
+                }
                 NetworkEvent::Point(v) => {
-                    /* let point = Point { x: 10, y: 10 }; */
-                    /* let duration = time::Duration::from_millis(500); */
-                    /* thread::sleep(duration); */
-                    /* println!("processing {:?}", v); */
-                    /* player2.lock().unwrap().redraw(point, &clonebox); */
-                    player2.lock().unwrap().redraw(v, &clonebox);
+                    player_clone.lock().unwrap().redraw(v, &clonebox);
                     clonebox.lock().unwrap().present();
                 }
-                _ => { ; }
+                _ => { },
             }
         }
     });
 
+    match event_sender.lock().unwrap().register_self() {
+        Ok(_) => { ; },
+        Err(e) => panic!("{}", e),
+    }
+
+    player.lock().unwrap().draw(&rustbox);
     rustbox.lock().unwrap().present();
+
     loop {
         let poll = rustbox_poll(&mut player, &event_sender, &rustbox);
         match poll {
