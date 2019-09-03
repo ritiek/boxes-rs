@@ -329,7 +329,6 @@ fn main() {
             .parse()
             .expect("Unable to parse socket address"),
     };
-    println!("{:?}", host_addr);
 
     let buf = &[0x00];
 
@@ -366,6 +365,7 @@ fn main() {
     }));
 
     let mut player_clone = player.clone();
+    event_sender.lock().unwrap().register_remote_socket(receiver_addr);
 
     let registrar = thread::spawn(move || {
         let mut players: Vec<Square> = Vec::new();
@@ -385,7 +385,6 @@ fn main() {
                     event_sender_clone.lock().unwrap().register_remote_socket(remote_receiver_addr);
                 }
                 NetworkEvent::PointID(v) => {
-                    println!("{:?}", v);
                     let current_player_id = player_clone.lock().unwrap().id;
                     /* println!("{:?}", current_player_id); */
                     /* println!("{:?}", v.id); */
