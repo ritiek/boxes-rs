@@ -24,11 +24,23 @@ struct Point {
     y: usize,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+enum PlayerColor {
+    Blue,
+    Red,
+    Green,
+    Yellow,
+    Cyan,
+    Magenta,
+    White,
+    Black,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
 struct Square {
     side: usize,
     coordinates: Point,
-    color: Color,
+    color: PlayerColor,
     id: usize,
 }
 
@@ -70,7 +82,7 @@ impl Square {
                 self.coordinates.x as usize,
                 self.coordinates.y as usize + increment,
                 rustbox::RB_BOLD,
-                self.color,
+                player_color_to_color(self.color),
                 Color::Black,
                 square_row,
             );
@@ -97,15 +109,15 @@ impl Square {
     }
 }
 
-#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
-struct PointID {
+#[derive(Debug, Serialize, Deserialize)]
+struct PlayerID {
     point: Point,
-    id: usize,
+    player: Square,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 enum NetworkEvent {
-    PointID(PointID),
+    PlayerID(PlayerID),
     Peers(Vec<SocketAddr>),
     PlayerJoin,
     PlayerLeft,
@@ -113,7 +125,7 @@ enum NetworkEvent {
     ID(usize),
 }
 
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 struct NetworkData {
     amt: usize,
     src: SocketAddr,
@@ -214,8 +226,8 @@ impl Sender {
         Ok(())
     }
 
-    fn tick(&self, point_id: PointID) -> Result<()> {
-        let bytes = bincode::serialize(&NetworkEvent::PointID(point_id)).unwrap();
+    fn tick(&self, player_id: PlayerID) -> Result<()> {
+        let bytes = bincode::serialize(&NetworkEvent::PlayerID(player_id)).unwrap();
         for peer_addr in self.peer_addrs.iter() {
             self.socket.send_to(&bytes, peer_addr)?;
         }
@@ -236,10 +248,20 @@ fn match_event(key: Key) -> Option<GameEvent> {
     }
 }
 
-fn rustbox_poll(square: &mut Arc<Mutex<Square>>, event_sender: &Arc<Mutex<Sender>>, rustbox: &Arc<Mutex<RustBox>>) -> Result<PointID> {
+fn rustbox_poll(square: &mut Arc<Mutex<Square>>, event_sender: &Arc<Mutex<Sender>>, rustbox: &Arc<Mutex<RustBox>>) -> Result<()> {
     let delay = time::Duration::from_millis(10);
     let pe = rustbox.lock().unwrap().peek_event(delay, false);
     /* let pe = rustbox.lock().unwrap().poll_event(false); */
+    let side = square.lock().unwrap().side;
+    let coordinates = square.lock().unwrap().coordinates;
+    let color = square.lock().unwrap().color;
+    let id = square.lock().unwrap().id;
+    let square_dump = Square {
+        side: side,
+        coordinates: coordinates,
+        color: color,
+        id: id,
+    };
     match pe {
         Ok(rustbox::Event::KeyEvent(key)) => {
             match match_event(key) {
@@ -252,10 +274,9 @@ fn rustbox_poll(square: &mut Arc<Mutex<Square>>, event_sender: &Arc<Mutex<Sender
                             /* println!("{:?}", position); */
                             /* Ok(square.lock().unwrap().coordinates) */
                             /* Ok(position) */
-                            let id = square.lock().unwrap().id;
-                            let point_id = PointID { point: position, id: id };
-                            event_sender.lock().unwrap().tick(point_id).unwrap();
-                            Ok(point_id)
+                            let player_id = PlayerID { point: position, player: square_dump };
+                            event_sender.lock().unwrap().tick(player_id).unwrap();
+                            Ok(())
                         }
                         GameEvent::Quit => {
                             Err(std::io::Error::new(std::io::ErrorKind::Other,
@@ -265,18 +286,17 @@ fn rustbox_poll(square: &mut Arc<Mutex<Square>>, event_sender: &Arc<Mutex<Sender
                 }
                 None => {
                     let point = square.lock().unwrap().coordinates;
-                    let id = square.lock().unwrap().id;
-                    let point_id = PointID { point: point, id: id };
-                    Ok(point_id)
+                    let player_id = PlayerID { point: point, player: square_dump };
+                    Ok(())
                 }
             }
         }
         Err(e) => panic!("{}", e.description()),
         _ => {
             let point = square.lock().unwrap().coordinates;
-            let id = square.lock().unwrap().id;
-            let point_id = PointID { point: point, id: id };
-            Ok(point_id) },
+            let player_id = PlayerID { point: point, player: square_dump };
+            Ok(())
+        },
     }
 }
 
@@ -306,17 +326,31 @@ fn rustbox_poll(square: &mut Arc<Mutex<Square>>, event_sender: &Arc<Mutex<Sender
     /* Ok(()) */
 /* } */
 
-fn id_to_color(id: usize) -> Color {
-    let color = match id {
-        0 => Color::Blue,
-        1 => Color::Red,
-        2 => Color::Green,
-        3 => Color::Yellow,
-        4 => Color::Cyan,
-        5 => Color::Magenta,
-        6 => Color::White,
-        _ => Color::Black,
+fn id_to_player_color(id: usize) -> PlayerColor {
+    let player_color = match id {
+        0 => PlayerColor::Blue,
+        1 => PlayerColor::Red,
+        2 => PlayerColor::Green,
+        3 => PlayerColor::Yellow,
+        4 => PlayerColor::Cyan,
+        5 => PlayerColor::Magenta,
+        6 => PlayerColor::White,
+        _ => PlayerColor::Black,
         /* _ => panic!("too many players"), */
+    };
+    player_color
+}
+
+fn player_color_to_color(player_color: PlayerColor) -> Color {
+    let color = match player_color {
+        PlayerColor::Blue => Color::Blue,
+        PlayerColor::Red => Color::Red,
+        PlayerColor::Green => Color::Green,
+        PlayerColor::Yellow => Color::Yellow,
+        PlayerColor::Cyan => Color::Cyan,
+        PlayerColor::Magenta => Color::Magenta,
+        PlayerColor::White => Color::White,
+        PlayerColor::Black => Color::Black,
     };
     color
 }
@@ -372,7 +406,7 @@ fn main() {
     let mut player = Arc::new(Mutex::new(Square {
         side: 0,
         coordinates: Point { x: 0, y: 0 },
-        color: Color::Blue,
+        color: PlayerColor::Blue,
         id: 0,
     }));
 
@@ -398,14 +432,14 @@ fn main() {
                         .unwrap();
                     event_sender_clone.lock().unwrap().register_remote_socket(remote_receiver_addr);
                 }
-                NetworkEvent::PointID(v) => {
+                NetworkEvent::PlayerID(mut v) => {
                     /* println!("{:?}", event_sender_clone.lock().unwrap().peer_addrs); */
                     let current_player_id = player_clone.lock().unwrap().id;
 
-                    if current_player_id == v.id {
+                    if current_player_id == v.player.id {
                         player_clone.lock().unwrap().redraw(v.point, &clonebox);
                     } else {
-                        players[v.id].redraw(v.point, &clonebox);
+                        v.player.redraw(v.point, &clonebox);
                     }
 
                     clonebox.lock().unwrap().present();
@@ -418,7 +452,7 @@ fn main() {
                 NetworkEvent::ID(v) => {
                     player_clone.lock().unwrap().id = v;
                     player_clone.lock().unwrap().side = 3;
-                    player_clone.lock().unwrap().color = id_to_color(v);
+                    player_clone.lock().unwrap().color = id_to_player_color(v);
                     player_clone.lock().unwrap().draw(&clonebox);
                     clonebox.lock().unwrap().present();
                 }
