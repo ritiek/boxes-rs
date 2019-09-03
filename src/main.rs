@@ -194,11 +194,11 @@ impl Sender {
     }
 
     fn register_remote_socket(&mut self, addr: SocketAddr) -> Result<()> {
-        self.peer_addrs.push(addr);
         let id = NetworkEvent::ID(self.peer_addrs.len());
         let bytes = bincode::serialize(&id).unwrap();
         self.socket.send_to(&bytes, addr)?;
             /* .expect("Failed to register remote socket"); */
+        self.peer_addrs.push(addr);
         Ok(())
     }
 
@@ -304,8 +304,7 @@ fn id_to_color(id: usize) -> Color {
         5 => Color::Magenta,
         6 => Color::White,
         7 => Color::Black,
-
-        _ => panic!("too many players"),
+        /* _ => panic!("too many players"), */
         _ => Color::Black,
     };
     color
