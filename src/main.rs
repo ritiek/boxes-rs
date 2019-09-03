@@ -249,7 +249,7 @@ fn match_event(key: Key) -> Option<GameEvent> {
 }
 
 fn rustbox_poll(square: &mut Arc<Mutex<Square>>, event_sender: &Arc<Mutex<Sender>>, rustbox: &Arc<Mutex<RustBox>>) -> Result<()> {
-    let delay = time::Duration::from_millis(1);
+    let delay = time::Duration::from_micros(500);
     let pe = rustbox.lock().unwrap().peek_event(delay, false);
     /* let pe = rustbox.lock().unwrap().poll_event(false); */
     let side = square.lock().unwrap().side;
