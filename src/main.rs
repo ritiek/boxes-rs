@@ -102,6 +102,7 @@ enum NetworkEvent {
     PlayerJoin,
     PlayerLeft,
     Nothing,
+    ID(usize),
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -185,15 +186,14 @@ impl Sender {
         Ok(())
     }
 
-    fn register_remote_socket(&mut self, addr: SocketAddr) {
-        self.socket
-            .send_to(
-                &(self.peer_addr.len() as u8).to_be_bytes(),
-                addr
-            )
-            .expect("Failed to register remote socket");
+    fn register_remote_socket(&mut self, addr: SocketAddr) -> Result<()> {
+        let id = NetworkEvent::ID(self.peer_addr.len());
+        let bytes = bincode::serialize(&id).unwrap();
+        self.socket.send_to(&bytes, addr)?;
+            /* .expect("Failed to register remote socket"); */
 
         self.peer_addr.push(addr);
+        Ok(())
     }
 
     fn tick(&self, position: Point) -> Result<()> {
@@ -276,6 +276,14 @@ fn rustbox_poll(square: &mut Arc<Mutex<Square>>, event_sender: &Arc<Mutex<Sender
     /* Ok(()) */
 /* } */
 
+fn id_to_color(id: usize) -> Color {
+    let color = match id {
+        0 => Color::Blue,
+        1 => Color::Red,
+        _ => panic!("too many players"),
+    };
+    color
+}
 
 fn main() {
     let args: Vec<String> = env::args().collect();
@@ -324,13 +332,14 @@ fn main() {
 
     let clonebox = rustbox.clone();
 
+    /* let mut player: Arc<Mutex<Square>>; */
     let mut player = Arc::new(Mutex::new(Square {
-        side: 3,
+        side: 0,
         coordinates: Point { x: 0, y: 0 },
         color: Color::Blue,
     }));
 
-    let player_clone = player.clone();
+    let mut player_clone = player.clone();
 
     let registrar = thread::spawn(move || {
         loop {
@@ -338,17 +347,51 @@ fn main() {
                 Ok(v) => v,
                 Err(e) => panic!("{}", e),
             };
+            /* println!("{:?}", data); */
 
             match data.event {
                 NetworkEvent::PlayerJoin => {
-                    event_sender_clone.lock().unwrap().peer_addr.push(data.src);
+                    /* player_clone.lock().unwrap().side = 4; */
+                    let remote_receiver_addr: SocketAddr = format!("{}:9999", data.src.ip()).parse().unwrap();
+                    event_sender_clone.lock().unwrap().register_remote_socket(remote_receiver_addr);
                 }
                 NetworkEvent::Point(v) => {
                     player_clone.lock().unwrap().redraw(v, &clonebox);
                     clonebox.lock().unwrap().present();
                 }
+                NetworkEvent::ID(v) => {
+                    player_clone.lock().unwrap().side = 3;
+                    player_clone.lock().unwrap().color = id_to_color(v);
+                    let initial_point = Point { x: 0, y: 0 };
+                    player_clone.lock().unwrap().redraw(initial_point, &clonebox);
+                    clonebox.lock().unwrap().present();
+                }
                 _ => { },
             }
+
+            /* let mut player_clone_clone = player_clone.clone(); */
+            /* let mut clonebox_clone = clonebox.clone(); */
+            /* let event_sender_clone_clone = event_sender_clone.clone(); */
+            /* thread::spawn(move || { */
+            /*     match data.event { */
+            /*         NetworkEvent::PlayerJoin => { */
+            /*             /1* player_clone.lock().unwrap().side = 4; *1/ */
+            /*             let remote_receiver_addr: SocketAddr = format!("{}:9999", data.src.ip()).parse().unwrap(); */
+            /*             event_sender_clone_clone.lock().unwrap().register_remote_socket(remote_receiver_addr); */
+            /*         } */
+            /*         NetworkEvent::Point(v) => { */
+            /*             player_clone_clone.lock().unwrap().redraw(v, &clonebox_clone); */
+            /*             clonebox_clone.lock().unwrap().present(); */
+            /*         } */
+            /*         NetworkEvent::ID(v) => { */
+            /*             player_clone_clone.lock().unwrap().side = 3; */
+            /*             player_clone_clone.lock().unwrap().color = id_to_color(v); */
+            /*             clonebox_clone.lock().unwrap().present(); */
+            /*         } */
+            /*         _ => { }, */
+            /*     }; */
+            /* }); */
+
         }
     });
 
