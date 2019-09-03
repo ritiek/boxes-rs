@@ -188,6 +188,10 @@ impl Sender {
 
     fn register_self(&self) -> Result<()> {
         let bytes = bincode::serialize(&NetworkEvent::PlayerJoin).unwrap();
+        let interface_addr: SocketAddr = "0.0.0.0:9999".parse().unwrap();
+        if interface_addr != self.host_addr {
+            self.socket.send_to(&bytes, interface_addr)?;
+        }
         self.socket.send_to(&bytes, self.host_addr)?;
             /* .expect("Failed to register self"); */
         Ok(())
@@ -365,7 +369,9 @@ fn main() {
     }));
 
     let mut player_clone = player.clone();
-    event_sender.lock().unwrap().register_remote_socket(receiver_addr);
+    /* if receiver_addr == host_addr { */
+    /*     event_sender.lock().unwrap().register_remote_socket(receiver_addr); */
+    /* } */
 
     let registrar = thread::spawn(move || {
         let mut players: Vec<Square> = Vec::new();
@@ -382,23 +388,17 @@ fn main() {
                     let remote_receiver_addr: SocketAddr = format!("{}:9999", data.src.ip())
                         .parse()
                         .unwrap();
-                    let local_addr: SocketAddr = "127.0.0.1:9999".parse().unwrap();
-                    if remote_receiver_addr != local_addr {
-                        event_sender_clone.lock().unwrap().register_remote_socket(remote_receiver_addr);
-                    }
+                    event_sender_clone.lock().unwrap().register_remote_socket(remote_receiver_addr);
                 }
                 NetworkEvent::PointID(v) => {
                     let current_player_id = player_clone.lock().unwrap().id;
-                    /* println!("{:?}", current_player_id); */
-                    /* println!("{:?}", v.id); */
-                    match v.id {
-                        current_player_id => {
-                            player_clone.lock().unwrap().redraw(v.point, &clonebox);
-                        }
-                        _ => {
-                            players[v.id].redraw(v.point, &clonebox);
-                        }
+
+                    if current_player_id == v.id {
+                        player_clone.lock().unwrap().redraw(v.point, &clonebox);
+                    } else {
+                        players[v.id].redraw(v.point, &clonebox);
                     }
+
                     clonebox.lock().unwrap().present();
                 }
                 NetworkEvent::ID(v) => {
