@@ -300,32 +300,6 @@ fn rustbox_poll(square: &mut Arc<Mutex<Square>>, event_sender: &Arc<Mutex<Sender
     }
 }
 
-/* fn rustbox_poll(square: &mut Square, rustbox: &Arc<Mutex<RustBox>>) -> Result<()> { */
-    /* let delay = time::Duration::from_millis(10); */
-    /* let pe = rustbox.lock().unwrap().peek_event(delay, false); */
-    /* /1* let pe = rustbox.lock().unwrap().poll_event(false); *1/ */
-    /* match pe { */
-    /*     Ok(rustbox::Event::KeyEvent(key)) => { */
-    /*         let event = match_event(key); */
-    /*         if let Some(event) = event { */
-    /*             match event { */
-    /*                 GameEvent::Direction(direction) => { */
-    /*                     let position = square.move_in_direction(direction); */
-    /*                     square.redraw(position, &rustbox); */
-    /*                     rustbox.lock().unwrap().present(); */
-    /*                 } */
-    /*                 GameEvent::Quit => { */
-    /*                     return Err(std::io::Error::new(std::io::ErrorKind::Other, "Received exit signal")); */
-    /*                 } */
-    /*             } */
-    /*         } */
-    /*     } */
-    /*     Err(e) => panic!("{}", e.description()), */
-    /*     _ => { }, */
-    /* } */
-    /* Ok(()) */
-/* } */
-
 fn id_to_player_color(id: usize) -> PlayerColor {
     let player_color = match id {
         0 => PlayerColor::Blue,
@@ -411,9 +385,6 @@ fn main() {
     }));
 
     let mut player_clone = player.clone();
-    /* if receiver_addr == host_addr { */
-    /*     event_sender.lock().unwrap().register_remote_socket(receiver_addr); */
-    /* } */
 
     let registrar = thread::spawn(move || {
         let mut players: Vec<Square> = Vec::new();
@@ -458,30 +429,6 @@ fn main() {
                 }
                 _ => { },
             }
-
-            /* let mut player_clone_clone = player_clone.clone(); */
-            /* let mut clonebox_clone = clonebox.clone(); */
-            /* let event_sender_clone_clone = event_sender_clone.clone(); */
-            /* thread::spawn(move || { */
-            /*     match data.event { */
-            /*         NetworkEvent::PlayerJoin => { */
-            /*             /1* player_clone.lock().unwrap().side = 4; *1/ */
-            /*             let remote_receiver_addr: SocketAddr = format!("{}:9999", data.src.ip()).parse().unwrap(); */
-            /*             event_sender_clone_clone.lock().unwrap().register_remote_socket(remote_receiver_addr); */
-            /*         } */
-            /*         NetworkEvent::Point(v) => { */
-            /*             player_clone_clone.lock().unwrap().redraw(v, &clonebox_clone); */
-            /*             clonebox_clone.lock().unwrap().present(); */
-            /*         } */
-            /*         NetworkEvent::ID(v) => { */
-            /*             player_clone_clone.lock().unwrap().side = 3; */
-            /*             player_clone_clone.lock().unwrap().color = id_to_color(v); */
-            /*             clonebox_clone.lock().unwrap().present(); */
-            /*         } */
-            /*         _ => { }, */
-            /*     }; */
-            /* }); */
-
         }
     });
 
