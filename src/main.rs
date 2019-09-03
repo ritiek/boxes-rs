@@ -194,12 +194,11 @@ impl Sender {
     }
 
     fn register_remote_socket(&mut self, addr: SocketAddr) -> Result<()> {
+        self.peer_addrs.push(addr);
         let id = NetworkEvent::ID(self.peer_addrs.len());
         let bytes = bincode::serialize(&id).unwrap();
         self.socket.send_to(&bytes, addr)?;
             /* .expect("Failed to register remote socket"); */
-
-        self.peer_addrs.push(addr);
         Ok(())
     }
 
@@ -265,8 +264,7 @@ fn rustbox_poll(square: &mut Arc<Mutex<Square>>, event_sender: &Arc<Mutex<Sender
             let point = square.lock().unwrap().coordinates;
             let id = square.lock().unwrap().id;
             let point_id = PointID { point: point, id: id };
-            Ok(point_id)
-        },
+            Ok(point_id) },
     }
 }
 
@@ -300,7 +298,15 @@ fn id_to_color(id: usize) -> Color {
     let color = match id {
         0 => Color::Blue,
         1 => Color::Red,
+        2 => Color::Green,
+        3 => Color::Yellow,
+        4 => Color::Cyan,
+        5 => Color::Magenta,
+        6 => Color::White,
+        7 => Color::Black,
+
         _ => panic!("too many players"),
+        _ => Color::Black,
     };
     color
 }
@@ -381,6 +387,7 @@ fn main() {
                     event_sender_clone.lock().unwrap().register_remote_socket(remote_receiver_addr);
                 }
                 NetworkEvent::PointID(v) => {
+                    println!("{:?}", v);
                     let current_player_id = player_clone.lock().unwrap().id;
                     /* println!("{:?}", current_player_id); */
                     /* println!("{:?}", v.id); */
