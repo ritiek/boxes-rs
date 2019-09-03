@@ -103,16 +103,17 @@ struct PointID {
     id: usize,
 }
 
-#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 enum NetworkEvent {
     PointID(PointID),
+    Peers(Vec<SocketAddr>),
     PlayerJoin,
     PlayerLeft,
     Nothing,
     ID(usize),
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 struct NetworkData {
     amt: usize,
     src: SocketAddr,
@@ -144,10 +145,11 @@ impl Receiver {
         /*     .expect("Failed to receive data"); */
 
         let event: NetworkEvent = bincode::deserialize(&buf).unwrap();
+        /* println!("{:?}", event); */
         Ok(NetworkData {
             amt: amt,
             src: src,
-            event: bincode::deserialize(&buf).unwrap(),
+            event: event,
         })
         // self.process_data(amt, src, &buf);
     }
@@ -159,10 +161,11 @@ impl Receiver {
         let mut buf = [0; 300];
         let (amt, src) = self.socket.recv_from(&mut buf)?;
 
+        let event: NetworkEvent = bincode::deserialize(&buf).unwrap();
         Ok(NetworkData {
             amt: amt,
             src: src,
-            event: bincode::deserialize(&buf).unwrap(),
+            event: event,
         })
     }
 }
@@ -199,10 +202,15 @@ impl Sender {
 
     fn register_remote_socket(&mut self, addr: SocketAddr) -> Result<()> {
         let id = NetworkEvent::ID(self.peer_addrs.len());
-        let bytes = bincode::serialize(&id).unwrap();
-        self.socket.send_to(&bytes, addr)?;
+        let id_bytes = bincode::serialize(&id).unwrap();
+        self.socket.send_to(&id_bytes, addr)?;
             /* .expect("Failed to register remote socket"); */
         self.peer_addrs.push(addr);
+        let peer_addrs_clone = self.peer_addrs.clone();
+        let peer_addrs_bytes = bincode::serialize(&NetworkEvent::Peers(peer_addrs_clone)).unwrap();
+        for peer_addr in self.peer_addrs.iter() {
+            self.socket.send_to(&peer_addrs_bytes, peer_addr)?;
+        }
         Ok(())
     }
 
@@ -391,6 +399,7 @@ fn main() {
                     event_sender_clone.lock().unwrap().register_remote_socket(remote_receiver_addr);
                 }
                 NetworkEvent::PointID(v) => {
+                    /* println!("{:?}", event_sender_clone.lock().unwrap().peer_addrs); */
                     let current_player_id = player_clone.lock().unwrap().id;
 
                     if current_player_id == v.id {
@@ -400,6 +409,11 @@ fn main() {
                     }
 
                     clonebox.lock().unwrap().present();
+                }
+                NetworkEvent::Peers(mut v) => {
+                    /* println!("{:?}", v); */
+                    v[0] = format!("{}:9999", data.src.ip()).parse().unwrap();
+                    event_sender_clone.lock().unwrap().peer_addrs = v;
                 }
                 NetworkEvent::ID(v) => {
                     player_clone.lock().unwrap().id = v;
