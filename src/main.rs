@@ -249,7 +249,7 @@ fn match_event(key: Key) -> Option<GameEvent> {
 }
 
 fn rustbox_poll(square: &mut Arc<Mutex<Square>>, event_sender: &Arc<Mutex<Sender>>, rustbox: &Arc<Mutex<RustBox>>) -> Result<()> {
-    let delay = time::Duration::from_millis(10);
+    let delay = time::Duration::from_millis(5);
     let pe = rustbox.lock().unwrap().peek_event(delay, false);
     /* let pe = rustbox.lock().unwrap().poll_event(false); */
     let side = square.lock().unwrap().side;
@@ -404,7 +404,7 @@ fn main() {
                     event_sender_clone.lock().unwrap().register_remote_socket(remote_receiver_addr);
                 }
                 NetworkEvent::PlayerID(mut v) => {
-                    /* println!("{:?}", event_sender_clone.lock().unwrap().peer_addrs); */
+                    /* println!("{:?}", v); */
                     let current_player_id = player_clone.lock().unwrap().id;
 
                     if current_player_id == v.player.id {
