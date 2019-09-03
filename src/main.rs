@@ -382,7 +382,8 @@ fn main() {
                     let remote_receiver_addr: SocketAddr = format!("{}:9999", data.src.ip())
                         .parse()
                         .unwrap();
-                    if remote_receiver_addr != receiver_addr {
+                    let local_addr: SocketAddr = "127.0.0.1:9999".parse().unwrap();
+                    if remote_receiver_addr != local_addr {
                         event_sender_clone.lock().unwrap().register_remote_socket(remote_receiver_addr);
                     }
                 }
