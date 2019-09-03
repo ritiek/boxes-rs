@@ -307,7 +307,7 @@ fn id_to_color(id: usize) -> Color {
 
 fn main() {
     let args: Vec<String> = env::args().collect();
-    let bind_interface: &str = "127.0.0.1";
+    let bind_interface: &str = "0.0.0.0";
 
     let receiver_port: u16 = 9999;
     let receiver_addr: SocketAddr = format!("{}:{}", &bind_interface, &receiver_port)
@@ -321,10 +321,11 @@ fn main() {
 
     let host_addr: SocketAddr = match args.len() {
         1 => receiver_addr,
-        _ => args[0]
+        _ => args[1]
             .parse()
             .expect("Unable to parse socket address"),
     };
+    println!("{:?}", host_addr);
 
     let buf = &[0x00];
 
