@@ -303,9 +303,8 @@ fn id_to_color(id: usize) -> Color {
         4 => Color::Cyan,
         5 => Color::Magenta,
         6 => Color::White,
-        7 => Color::Black,
-        /* _ => panic!("too many players"), */
         _ => Color::Black,
+        /* _ => panic!("too many players"), */
     };
     color
 }
