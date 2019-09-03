@@ -382,7 +382,9 @@ fn main() {
                     let remote_receiver_addr: SocketAddr = format!("{}:9999", data.src.ip())
                         .parse()
                         .unwrap();
-                    event_sender_clone.lock().unwrap().register_remote_socket(remote_receiver_addr);
+                    if remote_receiver_addr != receiver_addr {
+                        event_sender_clone.lock().unwrap().register_remote_socket(remote_receiver_addr);
+                    }
                 }
                 NetworkEvent::PointID(v) => {
                     let current_player_id = player_clone.lock().unwrap().id;
