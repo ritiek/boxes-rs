@@ -81,13 +81,21 @@ impl Square {
     pub fn move_in_direction(&mut self, direction: Direction) -> Point {
         match direction {
             Direction::Up => {
-                Point { x: self.coordinates.x, y: self.coordinates.y - 1 }
+                if self.coordinates.y > 0 {
+                    Point { x: self.coordinates.x, y: self.coordinates.y - 1 }
+                } else {
+                    Point { x: self.coordinates.x, y: self.coordinates.y }
+                }
             }
             Direction::Right => {
                 Point { x: self.coordinates.x + 1, y: self.coordinates.y }
             }
             Direction::Left => {
-                Point { x: self.coordinates.x - 1, y: self.coordinates.y }
+                if self.coordinates.x > 0 {
+                    Point { x: self.coordinates.x - 1, y: self.coordinates.y }
+                } else {
+                    Point { x: self.coordinates.x, y: self.coordinates.y }
+                }
             }
             Direction::Down => {
                 Point { x: self.coordinates.x, y: self.coordinates.y + 1 }
