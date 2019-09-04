@@ -70,7 +70,7 @@ fn rustbox_poll(square: &mut Arc<Mutex<Square>>, event_sender: &Arc<Mutex<Sender
 }
 
 fn id_to_player_color(id: usize) -> PlayerColor {
-    let player_color = match id {
+    match id {
         0 => PlayerColor::Blue,
         1 => PlayerColor::Red,
         2 => PlayerColor::Green,
@@ -79,8 +79,7 @@ fn id_to_player_color(id: usize) -> PlayerColor {
         5 => PlayerColor::Magenta,
         6 => PlayerColor::White,
         _ => PlayerColor::Black,
-    };
-    player_color
+    }
 }
 
 fn main() -> Result<()> {
