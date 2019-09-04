@@ -11,8 +11,6 @@ use std::io::Result;
 use std::sync::{Arc, Mutex};
 use std::{thread, time};
 
-use std::process;
-
 use rustbox::{Color, RustBox};
 use rustbox::Key;
 use serde_derive::{Serialize, Deserialize};
@@ -163,7 +161,6 @@ impl Receiver {
             src: src,
             event: event,
         })
-        // self.process_data(amt, src, &buf);
     }
 
     fn peek_event(&self, duration: time::Duration) -> Result<NetworkData> {
@@ -285,16 +282,12 @@ fn rustbox_poll(square: &mut Arc<Mutex<Square>>, event_sender: &Arc<Mutex<Sender
                     }
                 }
                 None => {
-                    let point = square.lock().unwrap().coordinates;
-                    let player_id = PlayerID { point: point, player: square_dump };
                     Ok(())
                 }
             }
         }
         Err(e) => panic!("{}", e.description()),
         _ => {
-            let point = square.lock().unwrap().coordinates;
-            let player_id = PlayerID { point: point, player: square_dump };
             Ok(())
         },
     }
@@ -310,21 +303,20 @@ fn id_to_player_color(id: usize) -> PlayerColor {
         5 => PlayerColor::Magenta,
         6 => PlayerColor::White,
         _ => PlayerColor::Black,
-        /* _ => panic!("too many players"), */
     };
     player_color
 }
 
 fn player_color_to_color(player_color: PlayerColor) -> Color {
     let color = match player_color {
-        PlayerColor::Blue => Color::Blue,
-        PlayerColor::Red => Color::Red,
-        PlayerColor::Green => Color::Green,
-        PlayerColor::Yellow => Color::Yellow,
-        PlayerColor::Cyan => Color::Cyan,
+        PlayerColor::Blue    => Color::Blue,
+        PlayerColor::Red     => Color::Red,
+        PlayerColor::Green   => Color::Green,
+        PlayerColor::Yellow  => Color::Yellow,
+        PlayerColor::Cyan    => Color::Cyan,
         PlayerColor::Magenta => Color::Magenta,
-        PlayerColor::White => Color::White,
-        PlayerColor::Black => Color::Black,
+        PlayerColor::White   => Color::White,
+        PlayerColor::Black   => Color::Black,
     };
     color
 }
@@ -350,8 +342,6 @@ fn main() {
             .expect("Unable to parse socket address"),
     };
 
-    let buf = &[0x00];
-
     let event_receiver = match Receiver::new(receiver_addr) {
         Ok(v) => v,
         Err(e) => panic!("{}", e),
@@ -362,10 +352,6 @@ fn main() {
         Err(e) => panic!("{}", e),
     };
 
-
-    // --------------------
-    // SOCKET COMMUNICATION
-    // --------------------
 
     let event_sender_clone = event_sender.clone();
 
@@ -384,10 +370,9 @@ fn main() {
         id: 0,
     }));
 
-    let mut player_clone = player.clone();
+    let player_clone = player.clone();
 
-    let registrar = thread::spawn(move || {
-        let mut players: Vec<Square> = Vec::new();
+    thread::spawn(move || {
         loop {
             let data = match event_receiver.poll_event() {
                 Ok(v) => v,
@@ -401,7 +386,12 @@ fn main() {
                     let remote_receiver_addr: SocketAddr = format!("{}:9999", data.src.ip())
                         .parse()
                         .unwrap();
-                    event_sender_clone.lock().unwrap().register_remote_socket(remote_receiver_addr);
+
+                    match event_sender_clone.lock().unwrap()
+                        .register_remote_socket(remote_receiver_addr) {
+                            Ok(_) => { },
+                            Err(e) => panic!("{}", e),
+                    };
                 }
                 NetworkEvent::PlayerID(mut v) => {
                     /* println!("{:?}", v); */
@@ -443,11 +433,7 @@ fn main() {
     loop {
         let poll = rustbox_poll(&mut player, &event_sender, &rustbox);
         match poll {
-            Ok(v) => {
-                /* /1* println!("{:?}", v) *1/ */
-                /* event_sender.lock().unwrap().tick(v).unwrap(); */
-                /* /1* rustbox.lock().unwrap().present(); *1/ */
-            },
+            Ok(_) => { },
             Err(_) => break,
         };
         /* let duration = time::Duration::from_millis(500); */
