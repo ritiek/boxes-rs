@@ -10,7 +10,7 @@ use std::sync::{Arc, Mutex};
 use std::net::SocketAddr;
 
 use boxes_rs::game::{Square, Direction, PlayerColor, Point};
-use boxes_rs::network::events::{NetworkEvent, GameEvent, PlayerID};
+use boxes_rs::network::types::{NetworkEvent, GameEvent, PlayerID};
 use boxes_rs::network::receiver::Receiver;
 use boxes_rs::network::sender::Sender;
 
