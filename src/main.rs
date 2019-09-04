@@ -1,23 +1,19 @@
-extern crate rustbox;
-extern crate bincode;
-extern crate serde_derive;
-extern crate serde;
-
-use std::env;
-use std::error::Error;
-use std::default::Default;
-use std::net::SocketAddr;
-use std::io::Result;
-use std::sync::{Arc, Mutex};
-use std::{thread, time};
-
 use rustbox::RustBox;
 use rustbox::Key;
 
-use boxes_rs::network::{NetworkEvent, GameEvent, PlayerID};
+use std::default::Default;
+use std::io::Result;
+use std::error::Error;
+use std::env;
+use std::{thread, time};
+use std::sync::{Arc, Mutex};
+use std::net::SocketAddr;
+
 use boxes_rs::game::{Square, Direction, PlayerColor, Point};
-use boxes_rs::receiver::Receiver;
-use boxes_rs::sender::Sender;
+use boxes_rs::network::events::{NetworkEvent, GameEvent, PlayerID};
+use boxes_rs::network::receiver::Receiver;
+use boxes_rs::network::sender::Sender;
+
 
 fn match_event(key: Key) -> Option<GameEvent> {
     match key {
@@ -33,7 +29,6 @@ fn match_event(key: Key) -> Option<GameEvent> {
 fn rustbox_poll(square: &mut Arc<Mutex<Square>>, event_sender: &Arc<Mutex<Sender>>, rustbox: &Arc<Mutex<RustBox>>) -> Result<()> {
     let delay = time::Duration::from_nanos(1000);
     let pe = rustbox.lock().unwrap().peek_event(delay, false);
-    /* let pe = rustbox.lock().unwrap().poll_event(false); */
     let side = square.lock().unwrap().side;
     let coordinates = square.lock().unwrap().coordinates;
     let color = square.lock().unwrap().color;
@@ -88,44 +83,34 @@ fn id_to_player_color(id: usize) -> PlayerColor {
     player_color
 }
 
-fn main() {
+fn main() -> Result<()> {
     let args: Vec<String> = env::args().collect();
     let bind_interface: &str = "0.0.0.0";
 
     let receiver_port: u16 = 9999;
     let receiver_addr: SocketAddr = format!("{}:{}", &bind_interface, &receiver_port)
         .parse()
-        .expect("Unable to parse socket address");
+        .unwrap();
 
     let sender_port: u16 = 9998;
     let sender_addr: SocketAddr = format!("{}:{}", &bind_interface, &sender_port)
         .parse()
-        .expect("Unable to parse socket address");
+        .unwrap();
 
     let host_addr: SocketAddr = match args.len() {
         1 => receiver_addr,
         _ => args[1]
             .parse()
-            .expect("Unable to parse socket address"),
+            .unwrap(),
     };
 
-    let event_receiver = match Receiver::new(receiver_addr) {
-        Ok(v) => v,
-        Err(e) => panic!("{}", e),
-    };
-
-    let event_sender = match Sender::new(sender_addr, host_addr) {
-        Ok(v) => Arc::new(Mutex::new(v)),
-        Err(e) => panic!("{}", e),
-    };
-
-
+    let event_receiver = Receiver::new(receiver_addr)?;
+    let event_sender = Arc::new(Mutex::new(Sender::new(sender_addr, host_addr)?));
     let event_sender_clone = event_sender.clone();
 
-    let rustbox = match RustBox::init(Default::default()) {
-        Ok(v) => Arc::new(Mutex::new(v)),
-        Err(e) => panic!("{}", e),
-    };
+    let rustbox = Arc::new(Mutex::new(
+        RustBox::init(Default::default()).unwrap()
+    ));
 
     let clonebox = rustbox.clone();
 
@@ -140,27 +125,19 @@ fn main() {
 
     thread::spawn(move || {
         loop {
-            let data = match event_receiver.poll_event() {
-                Ok(v) => v,
-                Err(e) => panic!("{}", e),
-            };
-            /* println!("{:?}", data); */
+            let data = event_receiver.poll_event().unwrap();
 
             match data.event {
                 NetworkEvent::PlayerJoin => {
-                    /* player_clone.lock().unwrap().side = 4; */
                     let remote_receiver_addr: SocketAddr = format!("{}:9999", data.src.ip())
                         .parse()
                         .unwrap();
 
-                    match event_sender_clone.lock().unwrap()
-                        .register_remote_socket(remote_receiver_addr) {
-                            Ok(_) => { },
-                            Err(e) => panic!("{}", e),
-                    };
+                    event_sender_clone.lock().unwrap()
+                        .register_remote_socket(remote_receiver_addr)
+                        .unwrap();
                 }
                 NetworkEvent::PlayerID(mut v) => {
-                    /* println!("{:?}", v); */
                     let current_player_id = player_clone.lock().unwrap().id;
 
                     if current_player_id == v.player.id {
@@ -172,7 +149,6 @@ fn main() {
                     clonebox.lock().unwrap().present();
                 }
                 NetworkEvent::Peers(mut v) => {
-                    /* println!("{:?}", v); */
                     v[0] = format!("{}:9999", data.src.ip()).parse().unwrap();
                     event_sender_clone.lock().unwrap().peer_addrs = v;
                 }
@@ -188,10 +164,7 @@ fn main() {
         }
     });
 
-    match event_sender.lock().unwrap().register_self() {
-        Ok(_) => { },
-        Err(e) => panic!("{}", e),
-    }
+    event_sender.lock().unwrap().register_self()?;
 
     player.lock().unwrap().draw(&rustbox);
     rustbox.lock().unwrap().present();
@@ -203,4 +176,6 @@ fn main() {
             Err(_) => break,
         };
     }
+
+    Ok(())
 }

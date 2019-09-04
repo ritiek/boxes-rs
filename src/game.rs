@@ -29,7 +29,7 @@ pub enum Direction {
 }
 
 fn player_color_to_color(player_color: PlayerColor) -> Color {
-    let color = match player_color {
+    match player_color {
         PlayerColor::Blue => Color::Blue,
         PlayerColor::Red => Color::Red,
         PlayerColor::Green => Color::Green,
@@ -38,8 +38,7 @@ fn player_color_to_color(player_color: PlayerColor) -> Color {
         PlayerColor::Magenta => Color::Magenta,
         PlayerColor::White => Color::White,
         PlayerColor::Black => Color::Black,
-    };
-    color
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -80,7 +79,7 @@ impl Square {
     }
 
     pub fn move_in_direction(&mut self, direction: Direction) -> Point {
-        let coordinates = match direction {
+        match direction {
             Direction::Up => {
                 Point { x: self.coordinates.x, y: self.coordinates.y - 1 }
             }
@@ -93,7 +92,6 @@ impl Square {
             Direction::Down => {
                 Point { x: self.coordinates.x, y: self.coordinates.y + 1 }
             }
-        };
-        coordinates
+        }
     }
 }
